@@ -1,2 +1,2 @@
-To install, just rename the preset of your choice to 'config.ini' and paste into the 'src' folder.
+To install, just paste the preset of your choice into the 'src' folder and rename to 'config.ini' OR copy and paste config contents into 'config.ini'
 

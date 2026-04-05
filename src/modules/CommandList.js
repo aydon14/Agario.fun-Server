@@ -9,8 +9,9 @@ class CommandsList {
         this.addbot.description = "Add player bots to this server.";
         this.rmbot.description = "Remove bots from the server";
         this.kick.description = "Kick a client from the game";
-        this.killall.description = "Remove all client cells from the game.";
+        this.killall.description = "Remove all client cells";
         this.mass.description = "Set mass for all cells of a player.";
+        this.restart.description = "Restart the server.";
         this.exit.description = "Exit the server.";
         this.stats.description = "Generate current server stats";
         this.aliases.description = "Generate command aliases.";
@@ -129,6 +130,9 @@ class CommandsList {
             if (typeof socket._botId === "number") {
                 server.bots.releaseBotId(socket._botId);
             }
+            if (server.bots && typeof server.bots.forgetBotPlayer === "function") {
+                server.bots.forgetBotPlayer(client.pID);
+            }
             if (client?.cells?.length) {
                 while (client.cells.length) {
                     const cell = client.cells[0];
@@ -173,21 +177,12 @@ class CommandsList {
         };
     };
 
-    killall(server, split) {
-        // Check if server is empty.
-        if(!server.clients.length) {
-            return Logger.warn("The server is empty.");
-        };
+    killall(server, args) {
+        if (typeof server.killAllPlayersAndRefillViruses !== "function") {
+            return Logger.warn("Killall handler is unavailable.");
+        }
 
-        server.clients.forEach(socket => {
-            const client = socket.playerTracker;
-
-            while (client.cells.length) {
-                server.removeNode(client.cells[0]);
-            };
-        });
-
-        return Logger.success("Removed all players.");
+        server.killAllPlayersAndRefillViruses("host-command");
     };
 
     mass(server, args) {
@@ -215,6 +210,13 @@ class CommandsList {
         });
 
     };
+
+    restart(server, args) {
+        if (typeof server.requestRestart !== "function") {
+            return Logger.warn("Restart handler is unavailable.");
+        }
+        server.requestRestart();
+    }
 
     exit(server, args) {
         const exitCode = args[1]; // Optional exit code.

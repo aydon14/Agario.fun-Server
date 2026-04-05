@@ -23,7 +23,7 @@ class Virus extends Cell {
     // Main Functions
     canEat(cell) {
         // cannot eat if virusMaxAmount is reached
-        if (this.server.nodesVirus.length < this.server.config.virusMaxAmount)
+        if (this.server.config.virusFeeding)
             return cell.type == 3; // virus can eat ejected mass only
     }
     onEat(prey) {
@@ -89,8 +89,6 @@ class Virus extends Cell {
         var index = server.nodesVirus.indexOf(this);
         if (index != -1)
             server.nodesVirus.splice(index, 1);
-        // Respawn
-        server.spawnVirus();
     }
 }
 

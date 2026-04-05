@@ -1,0 +1,126 @@
+C-3PO
+R2-D2
+BB-8
+K-2SO
+IG-88
+IG-11
+R5-D4
+AP-5
+GLaDOS
+Wheatley
+Atlas
+P-body
+343 Guilty Spark
+Cortana
+Freddy Fazbear
+Bonnie
+Chica
+Foxy
+Golden Freddy
+Toy Freddy
+Toy Bonnie
+Toy Chica
+Mangle
+Balloon Boy
+JJ
+The Puppet
+Springtrap
+Circus Baby
+Ballora
+Funtime Freddy
+Funtime Foxy
+Ennard
+Helpy
+Glamrock Freddy
+Roxanne Wolf
+Montgomery Gator
+Optimus Prime
+Bumblebee
+Megatron
+Starscream
+Soundwave
+Shockwave
+Ironhide
+Ratchet
+Jazz
+Wheeljack
+Arcee
+Hot Rod
+Ultra Magnus
+Grimlock
+Devastator
+WALL-E
+EVE
+AUTO
+M-O
+Bender
+Calculon
+Robot Devil
+Clamps
+T-800
+T-1000
+Rev-9
+Data
+Lore
+Sonny
+HK-47
+Claptrap
+Omnidroid
+Baymax
+Ultron
+Vision
+JARVIS
+FRIDAY
+KITT
+HAL 9000
+ED-209
+RoboCop
+Johnny 5
+Marvin
+Ash
+Bishop
+Skynet
+Deep Thought
+TARS
+ChatGPT
+GPT-4
+GPT-5
+Deep Blue
+Watson
+AlphaGo
+AlphaZero
+Gemini
+Siri
+Alexa
+Google Assistant
+Copilot
+Midjourney
+DALL-E
+Claude
+Bard
+LaMDA
+OpenAI Five
+AutoGPT
+BabyAGI
+Replika
+Grok
+Aurora
+Roland
+Isabel
+Mother
+David
+Red Queen
+VIKI
+Omnius
+SHODAN
+AM
+Earth
+Tianhe-2
+Sunway TaihuLight
+Perlmutter
+Selene
+Leviathan
+Grid
+EDITH
+Durandal
+Neuromancer

@@ -31,6 +31,7 @@ class PlayerTracker {
         this.spectate = false;
         this.freeRoam = false; // Free-roam mode enables player to move in spectate mode
         this.spectateTarget = null; // Spectate target, null for largest player
+        this.spectateScale = 0.12;
         this.lastKeypressTick = 0;
         this.centerPos = new Vec2(0, 0);
         this.mouse = new Vec2(0, 0);
@@ -101,6 +102,7 @@ class PlayerTracker {
         this.spectate = false;
         this.freeRoam = false;
         this.spectateTarget = null;
+        this.spectateScale = 0.12;
         this.server.mode.onPlayerSpawn(this.server, this);
     }
     checkConnection() {
@@ -139,15 +141,26 @@ class PlayerTracker {
             return;
         // update viewbox
         this.updateSpecView(this.cells.length);
-        var scale = Math.max(this.getScale(), 0.15);
-        var halfWidth = (1920 + 100) / scale / 2;
-        var halfHeight = (1080 + 100) / scale / 2;
-        this.viewBox = new Quad(
-            this.centerPos.x - halfWidth,
-            this.centerPos.y - halfHeight,
-            this.centerPos.x + halfWidth,
-            this.centerPos.y + halfHeight
-        );
+        if (this.spectate && !this.cells.length) {
+            // Keep spectator node visibility on full map so client-side zoom never hides entities.
+            this.viewBox = new Quad(
+                this.server.border.minx - 1,
+                this.server.border.miny - 1,
+                this.server.border.maxx + 1,
+                this.server.border.maxy + 1
+            );
+        }
+        else {
+            var scale = Math.max(this.getScale(), 0.15);
+            var halfWidth = (3840 + 100) / scale / 2;
+            var halfHeight = (2160 + 100) / scale / 2;
+            this.viewBox = new Quad(
+                this.centerPos.x - halfWidth,
+                this.centerPos.y - halfHeight,
+                this.centerPos.x + halfWidth,
+                this.centerPos.y + halfHeight
+            );
+        }
         // update visible nodes
         this.viewNodes = [];
         var self = this;
@@ -228,39 +241,23 @@ class PlayerTracker {
             );
         }
         else {
-            if (this.freeRoam || this.getSpecTarget() == null) {
-                // free roam
-                var mouseVec = this.mouse.difference(this.centerPos);
-                var mouseDist = mouseVec.dist();
-                if (mouseDist != 0) {
-                    this.setCenterPos(this.centerPos.add(mouseVec.product(32 / mouseDist)));
-                }
-                var scale = 0.4;
+            // always free roam while spectating
+            this.freeRoam = true;
+            this.spectateTarget = null;
+            var mouseVec = this.mouse.difference(this.centerPos);
+            var mouseDist = mouseVec.dist();
+            if (mouseDist != 0) {
+                this.setCenterPos(this.centerPos.add(mouseVec.product(32 / mouseDist)));
             }
-            else {
-                // spectate target
-                var player = this.getSpecTarget();
-                if (player) {
-                    this.setCenterPos(player.centerPos);
-                    var scale = player.getScale();
-                    this.place = player.place;
-                    this.viewBox = player.viewBox;
-                    this.viewNodes = player.viewNodes;
-                }
-            }
+            var scale = this.spectateScale;
             // sends camera packet
             this.socket.packetHandler.sendPacket(new Packet.UpdatePosition(this, this.centerPos.x, this.centerPos.y, scale));
         }
     }
     pressSpace() {
         if (this.spectate) {
-            // Check for spam first (to prevent too many add/del updates)
-            if (this.server.ticks - this.lastKeypressTick < 40)
-                return;
-            this.lastKeypressTick = this.server.ticks;
-            // Space doesn't work for freeRoam mode
-            if (this.freeRoam || this.server.largestClient == null)
-                return;
+            this.changeSpectateScale(1);
+            return;
         }
         else if (this.server.run) {
             // Disable mergeOverride on the last merging cell
@@ -273,20 +270,29 @@ class PlayerTracker {
         }
     }
     pressW() {
-        if (this.spectate || !this.server.run)
+        if (this.spectate) {
+            return;
+        }
+        if (!this.server.run)
             return;
         this.server.ejectMass(this);
     }
     pressQ() {
         if (this.spectate) {
-            // Check for spam first (to prevent too many add/del updates)
-            if (this.server.ticks - this.lastKeypressTick < 40)
-                return;
-            this.lastKeypressTick = this.server.ticks;
-            if (this.spectateTarget == null)
-                this.freeRoam = !this.freeRoam;
+            this.freeRoam = true;
             this.spectateTarget = null;
+            this.spectateScale = 0.12;
+            return;
         }
+    }
+    changeSpectateScale(direction) {
+        var step = 1.15;
+        var minScale = 0.05;
+        var maxScale = 1.5;
+        if (direction > 0)
+            this.spectateScale = Math.min(this.spectateScale * step, maxScale);
+        else
+            this.spectateScale = Math.max(this.spectateScale / step, minScale);
     }
     getSpecTarget() {
         if (this.spectateTarget == null || this.spectateTarget.isRemoved) {

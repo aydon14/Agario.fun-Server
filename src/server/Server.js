@@ -7,6 +7,7 @@ var ini = require("../modules/ini");
 var Entity = require('../entity');
 var Vec2 = require('../modules/Vec2');
 var Logger = require('../modules/Logger');
+var Packet = require('../packet');
 var {QuadNode, Quad} = require('../modules/QuadNode.js');
 
 // Server implementation
@@ -42,6 +43,14 @@ class Server {
         this.mainLoopBind = null;
         this.ticks = 0;
         this.disableSpawn = false;
+        this.isStopping = false;
+        this.silentStartup = false;
+
+        // Backend-only virus refill tuning (not host-configurable)
+        this.virusRefillIntervalTicks = 25;
+        this.virusRefillPerCheck = 100;
+        this.virusRefillRetryMax = 10;
+        this.lastVirusRefillTick = 0;
 
         // Config
         this.config = {
@@ -49,9 +58,11 @@ class Server {
             serverMaxConnections: 500,
             serverPort: 443,
             serverGamemode: 0,
+            teamAmount: 3,
             serverRestart: 0,
             serverColorSystem: 0,
             serverMaxLB: 10,
+            autoKillall: 0,
             borderWidth: 14142.135623730952,
             borderHeight: 14142.135623730952,
             foodMinSize: 10,
@@ -63,6 +74,7 @@ class Server {
             virusMaxPoppedSize: 60,
             virusEqualPopSize: 0,
             virusAmount: 50,
+            virusFeeding: 1,
             motherCellMaxMass: 0,
             virusVelocity: 780,
             virusMaxCells: 0,
@@ -70,6 +82,8 @@ class Server {
             serverBots: 0,
             botsAvoidViruses: 1,
             botsCanSplit: 1,
+            botSplitCooldown: 15,
+            botsUseCustomNames: 0,
             ejectSize: 36.06,
             ejectSizeLoss: 42.43,
             ejectCooldown: 3,
@@ -95,8 +109,8 @@ class Server {
             minionCollideTeam: 0,
             disableQ: 0,
             serverMinions: 0,
-            defaultName: "minion",
-            minionsOnLeaderboard: 0
+            minionsOnLeaderboard: 0,
+            minionsUseCustomNames: 0
         };
         this.loadConfig();
         this.ipBanList = [];
@@ -108,7 +122,9 @@ class Server {
         this.setBorder(this.config.borderWidth, this.config.borderHeight);
         this.quadTree = new QuadNode(this.border);
     }
-    start() {
+    start(options = {}) {
+        this.isStopping = false;
+        this.silentStartup = !!options.silentStartup;
         this.timerLoopBind = this.timerLoop.bind(this);
         this.mainLoopBind = this.mainLoop.bind(this);
         // Set up gamemode(s)
@@ -131,15 +147,20 @@ class Server {
     async onHttpServerOpen() {
         // Start Main Loop
         setTimeout(this.timerLoopBind, 1);
+        if (this.isStopping)
+            return;
         // Logging
-        Logger.info("The gamemode is " + this.mode.name);
-        Logger.info("Join game using:");
-        Logger.info(`ws://127.0.0.1:${this.config.serverPort} (Singleplayer)`);
+        if (!this.silentStartup) {
+            Logger.info("The gamemode is " + this.mode.name);
+            Logger.info("Join game using:");
+            Logger.info(`ws://127.0.0.1:${this.config.serverPort} (Singleplayer)`);
+        }
         // Log public-IP join link
         await new Promise((resolve, reject) => {
             const req = http.get({'host': 'api.ipify.org', 'port': 80, 'path': '/', 'timeout': 3000}, (resp) => {
                 resp.on('data', (ip) => {
-                    Logger.info(`ws://${ip}:${this.config.serverPort} (Multiplayer/Port Forwarding)`);
+                    if (!this.silentStartup)
+                        Logger.info(`ws://${ip}:${this.config.serverPort} (Multiplayer/Port Forwarding)`);
                     resolve();
                 });
             });
@@ -148,7 +169,8 @@ class Server {
             });
             req.setTimeout(3000, () => {
                 req.destroy();
-                Logger.error("HTTP request timed out. Check 'https://www.whatismyip.com/' for multiplayer.");
+                if (!this.silentStartup)
+                    Logger.error("HTTP request timed out. Check 'https://www.whatismyip.com/' for multiplayer.");
                 resolve(); // Resolve the promise after aborting the request
             });
         });
@@ -157,9 +179,68 @@ class Server {
         if (this.config.serverBots) {
             for (var i = 0; i < this.config.serverBots; i++)
                 this.bots.addBot();
-            Logger.info(this.config.serverBots + " bots have been added");
+            if (!this.silentStartup)
+                Logger.info(this.config.serverBots + " bots have been added");
         }
         this.spawnCells(this.config.virusAmount, this.config.foodAmount);
+    }
+    stop() {
+        if (this.isStopping)
+            return Promise.resolve();
+
+        this.isStopping = true;
+        this.run = false;
+
+        if (this.bots && typeof this.bots.stop === 'function') {
+            this.bots.stop();
+        }
+
+        for (const socket of this.clients) {
+            try {
+                socket.close(1001, "Server restarting");
+            } catch (err) {
+            }
+            if (socket && socket._socket && typeof socket._socket.destroy == 'function') {
+                try {
+                    socket._socket.destroy();
+                } catch (err) {
+                }
+            }
+        }
+        this.clients = [];
+
+        const closeWs = new Promise((resolve) => {
+            if (!this.wsServer || typeof this.wsServer.close != 'function')
+                return resolve();
+
+            try {
+                this.wsServer.clients.forEach((client) => {
+                    try {
+                        client.terminate();
+                    } catch (err) {
+                    }
+                });
+                this.wsServer.close(() => resolve());
+            } catch (err) {
+                resolve();
+            }
+        });
+
+        const closeHttp = new Promise((resolve) => {
+            if (!this.httpServer || typeof this.httpServer.close != 'function')
+                return resolve();
+
+            try {
+                this.httpServer.close(() => resolve());
+            } catch (err) {
+                resolve();
+            }
+        });
+
+        return Promise.all([closeWs, closeHttp]).then(() => {
+            this.httpServer = null;
+            this.wsServer = null;
+        });
     }
     loadConfig() {
         let config = "./config.ini";
@@ -387,6 +468,77 @@ class Server {
         // Special on-remove actions
         node.onRemove(this);
     }
+    broadcastKillallNotification(sourceCode) {
+        sourceCode = sourceCode | 0;
+        this.clients.forEach((socket) => {
+            if (!socket || !socket.packetHandler || typeof socket.packetHandler.sendPacket !== "function")
+                return;
+            socket.packetHandler.sendPacket(new Packet.KillallNotification(sourceCode));
+        });
+    }
+    killAllPlayersAndRefillViruses(source) {
+        source = source || "unknown";
+        let removedPlayerCells = 0;
+        this.clients.forEach((socket) => {
+            const client = socket.playerTracker;
+            while (client.cells.length) {
+                this.removeNode(client.cells[0]);
+                removedPlayerCells++;
+            }
+        });
+
+        let removedViruses = 0;
+        while (this.nodesVirus.length) {
+            this.removeNode(this.nodesVirus[0]);
+            removedViruses++;
+        }
+
+        let spawnedViruses = 0;
+        const targetViruses = Math.max(0, this.config.virusAmount | 0);
+        const maxAttempts = Math.max(targetViruses * 4, targetViruses + 32, 64);
+        let attempts = 0;
+        while (this.nodesVirus.length < targetViruses && attempts++ < maxAttempts) {
+            if (this.spawnVirus(this.virusRefillRetryMax || 24)) {
+                spawnedViruses++;
+            }
+            else {
+                break;
+            }
+        }
+
+        let sourceCode = 0;
+        if (source === "host-command")
+            sourceCode = 1;
+        else if (source === "auto-map-cover")
+            sourceCode = 2;
+        this.broadcastKillallNotification(sourceCode);
+
+        return {
+            source,
+            removedPlayerCells,
+            removedViruses,
+            spawnedViruses
+        };
+    }
+    checkAutoKillallOnMapCover() {
+        if (!this.config.autoKillall)
+            return;
+
+        // Corner-safe threshold: large enough to cover the whole map even near an edge/corner.
+        const mapCoverThreshold = Math.hypot(this.border.width, this.border.height) / 1.5;
+        let triggerCell = null;
+        for (let i = 0; i < this.nodesPlayer.length; i++) {
+            const cell = this.nodesPlayer[i];
+            if (cell && !cell.isRemoved && cell._size >= mapCoverThreshold) {
+                triggerCell = cell;
+                break;
+            }
+        }
+        if (!triggerCell)
+            return;
+
+        this.killAllPlayersAndRefillViruses("auto-map-cover");
+    }
     updateClients() {
         // check dead clients
         var len = this.clients.length;
@@ -435,6 +587,8 @@ class Server {
         }
     }
     timerLoop() {
+        if (this.isStopping)
+            return;
         var timeStep = 40; // vanilla: 40
         var ts = Date.now();
         var dt = ts - this.timeStamp;
@@ -451,27 +605,36 @@ class Server {
         setTimeout(this.timerLoopBind, 0);
     }
     mainLoop() {
+        if (this.isStopping)
+            return;
         this.stepDateTime = Date.now();
         var tStart = process.hrtime();
         var self = this;
         // Loop main functions
         if (this.run) {
             // Move moving nodes first
-            this.movingNodes.forEach((cell) => {
-                if (cell.isRemoved)
-                    return;
+            for (let i = this.movingNodes.length - 1; i >= 0; i--) {
+                const cell = this.movingNodes[i];
+                if (!cell || cell.isRemoved || !cell.isMoving) {
+                    this.movingNodes.splice(i, 1);
+                    continue;
+                }
                 // Scan and check for ejected mass / virus collisions
                 this.boostCell(cell);
+                if (!cell.quadItem) {
+                    this.movingNodes.splice(i, 1);
+                    continue;
+                }
                 this.quadTree.find(cell.quadItem.bound, function (check) {
                     var m = self.checkCellCollision(cell, check);
-                    if (cell.type == 3 && check.type == 3 && !self.config.mobilePhysics)
-                        self.resolveRigidCollision(m);
-                    else
-                        self.resolveCollision(m);
+                    if (cell.type == 3 && check.type == 3) {
+                        return;
+                    }
+                    self.resolveCollision(m);
                 });
                 if (!cell.isMoving)
-                    this.movingNodes = null;
-            });
+                    this.movingNodes.splice(i, 1);
+            }
             // Update players and scan for collisions
             var eatCollisions = [];
             this.nodesPlayer.forEach((cell) => {
@@ -501,11 +664,15 @@ class Server {
                 this.resolveCollision(m);
             });
             this.mode.onTick(this);
+            this.checkAutoKillallOnMapCover();
+            this.refillViruses();
             this.ticks++;
         }
         if (!this.run && this.mode.IsTournament)
             this.ticks++;
         this.updateClients();
+        if (this.bots && typeof this.bots.processBotWorker == 'function')
+            this.bots.processBotWorker();
         // Resolve virus splits efficiently & reduce lag
         for (const ws of this.clients) {
             const client = ws.playerTracker;
@@ -578,7 +745,7 @@ class Server {
         else
             maxSize = this.config.playerMaxSize;
         // check size limit
-        if (client.mergeOverride || cell._size < maxSize)
+        if (client.mergeOverride || cell._size < maxSize || maxSize <= 0)
             return;
         if (client.cells.length >= this.config.playerMaxCells || this.config.mobilePhysics) {
             // cannot split => just limit
@@ -722,13 +889,38 @@ class Server {
         cell.color = this.getRandomColor();
         this.addNode(cell);
     }
-    spawnVirus() {
+    spawnVirus(maxAttempts) {
         var virus = new Entity.Virus(this, null, this.randomPos(), this.config.virusMinSize);
-        while (this.willCollide(virus)) {
+        let safe = !this.willCollide(virus);
+        let attempts = 0;
+        const retryMax = Math.max(1, maxAttempts || 64);
+        while (!safe && attempts++ < retryMax) {
             virus = new Entity.Virus(this, null, this.randomPos(), this.config.virusMinSize);
+            safe = !this.willCollide(virus);
         }
-        // edited to ensure viruses always spawn
+        if (!safe)
+            return false;
         this.addNode(virus);
+        return true;
+    }
+    refillViruses() {
+        if (this.ticks - this.lastVirusRefillTick < this.virusRefillIntervalTicks)
+            return;
+        this.lastVirusRefillTick = this.ticks;
+
+        var target = this.config.virusAmount;
+        if (!target || target <= 0)
+            return;
+
+        var deficit = target - this.nodesVirus.length;
+        if (deficit <= 0)
+            return;
+
+        var spawnBudget = Math.min(deficit, this.virusRefillPerCheck);
+        while (spawnBudget-- > 0) {
+            if (!this.spawnVirus(this.virusRefillRetryMax))
+                break;
+        }
     }
     spawnCells(virusCount, foodCount) {
         for (var i = 0; i < foodCount; i++) {

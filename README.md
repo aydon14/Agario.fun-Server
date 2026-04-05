@@ -6,10 +6,6 @@ https://github.com/Ardaninho/ArdaninhoAgarServer/
 
 This server is designed to work with my agar.io client. Both the client and server are designed to be portable, and can be ran locally on any machine.
 
-The code for Client.7z in releases can be found in this repository:
-
-https://github.com/aydon14/Agario-Client
-
 # Single player Installation
 
 1. Download the main code from GitHub.

@@ -8,46 +8,86 @@ class Teams extends Mode{
         this.decayMod = 1.5;
         this.packetLB = 50;
         this.haveTeams = true;
-        this.colorFuzziness = 32;
+        this.colorFuzziness = 16;
         // Special
-        this.teamAmount = 3; // Amount of teams. Having more than 3 teams will cause the leaderboard to work incorrectly (client issue).
-        this.colors = [{
-            'r': 223,
-            'g': 0,
-            'b': 0
-        }, {
-            'r': 0,
-            'g': 223,
-            'b': 0
-        }, {
-            'r': 0,
-            'g': 0,
-            'b': 223
-        },]; // Make sure you add extra colors here if you wish to increase the team amount [Default colors are: Red, Green, Blue]
+        this.teamAmount = 3;
+        this.colors = [
+            { r: 210, g: 70,  b: 70  },  // red
+            { r: 210, g: 130, b: 60  },  // orange
+            { r: 200, g: 180, b: 60  },  // yellow
+            { r: 120, g: 170, b: 70  },  // green
+            { r: 60,  g: 170, b: 140 },  // teal
+            { r: 60,  g: 140, b: 210 },  // blue
+            { r: 120, g: 100, b: 210 },  // purple
+            { r: 170, g: 90,  b: 190 },  // magenta
+            { r: 180, g: 100, b: 120 },  // rose
+            { r: 140, g: 110, b: 70  },  // brown
+            { r: 90,  g: 130, b: 70  },  // olive
+            { r: 90,  g: 130, b: 150 }   // slate
+        ]; // Make sure you add extra colors here if you wish to increase the team amount
+        // NOTE: If you add more colors, make sure to add the same colors into the client jss/main_out.js:596
         this.nodes = []; // Teams
+        this.serverRef = null;
     }
     //Gamemode Specific Functions
-    fuzzColorComponent(component) {
-        component += Math.random() * this.colorFuzziness >> 0;
-        return component;
+    clamp(v) {
+        return Math.max(0, Math.min(255, v));
+    }
+    getColorJitter(range) {
+        return (Math.random() * (range * 2 + 1) >> 0) - range;
     }
     getTeamColor(team) {
-        var color = this.colors[team];
+        const base = this.colors[team];
+        const j = this.getColorJitter(this.colorFuzziness);
+
         return {
-            r: this.fuzzColorComponent(color.r),
-            b: this.fuzzColorComponent(color.b),
-            g: this.fuzzColorComponent(color.g)
+            r: this.clamp(base.r + j),
+            g: this.clamp(base.g + j),
+            b: this.clamp(base.b + j)
         };
+    }
+    getLeastPopulatedTeam(server) {
+        if (!server || !server.clients || !server.clients.length)
+            return Math.floor(Math.random() * this.teamAmount);
+
+        const teamPlayers = new Array(this.teamAmount).fill(0);
+        for (var i = 0; i < server.clients.length; i++) {
+            const socket = server.clients[i];
+            const client = socket && socket.playerTracker;
+            if (!client || client.isMi || client.isRemoved)
+                continue;
+            if (client.team >= 0 && client.team < this.teamAmount)
+                teamPlayers[client.team]++;
+        }
+
+        var minCount = Number.MAX_SAFE_INTEGER;
+        var candidates = [];
+        for (var team = 0; team < this.teamAmount; team++) {
+            if (teamPlayers[team] < minCount) {
+                minCount = teamPlayers[team];
+                candidates = [team];
+            }
+            else if (teamPlayers[team] == minCount) {
+                candidates.push(team);
+            }
+        }
+        return candidates[(Math.random() * candidates.length) >> 0];
     }
     // Override
     onPlayerSpawn(server, player) {
-        // Random color based on team
+        player.team = this.getLeastPopulatedTeam(server);
+        // Team color based on balanced team selection
         player.color = this.getTeamColor(player.team);
         // Spawn player
         server.spawnPlayer(player, server.randomPos());
     }
     onServerInit(server) {
+        this.serverRef = server;
         // Set up teams
+        var configured = parseInt(server.config.teamAmount, 10);
+        if (isNaN(configured) || configured < 1) configured = 3;
+        this.teamAmount = Math.min(configured, this.colors.length); // clamp team amount to # of colors
+
         for (var i = 0; i < this.teamAmount; i++) {
             this.nodes[i] = [];
         }
@@ -64,8 +104,8 @@ class Teams extends Mode{
         }
     }
     onPlayerInit(player) {
-        // Get random team
-        player.team = Math.floor(Math.random() * this.teamAmount);
+        // Assign least-populated team when player tracker is created.
+        player.team = this.getLeastPopulatedTeam(this.serverRef);
     }
     onCellAdd(cell) {
         // Add to team list
@@ -130,13 +170,3 @@ class Teams extends Mode{
 
 module.exports = Teams;
 Teams.prototype = new Mode();
-
-
-
-
-
-
-
-
-
-

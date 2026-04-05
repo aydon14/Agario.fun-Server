@@ -10,4 +10,5 @@ module.exports = {
     UpdateNodes: require('./UpdateNodes'),
     UpdateLeaderboard: require('./UpdateLeaderboard'),
     LeaderboardPosition: require('./LeaderboardPosition'),
+    KillallNotification: require('./KillallNotification'),
 };

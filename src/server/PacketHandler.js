@@ -9,7 +9,6 @@ class PacketHandler {
         this.handshakeProtocol = null;
         this.handshakeKey = null;
         this.lastJoinTick = 0;
-        this.lastChatTick = 0;
         this.lastStatTick = 0;
         this.lastQTick = 0;
         this.lastSpaceTick = 0;
@@ -57,6 +56,8 @@ class PacketHandler {
             17: this.message_onKeySpace.bind(this),
             18: this.message_onKeyQ.bind(this),
             21: this.message_onKeyW.bind(this),
+            22: this.message_onSpectateZoomIn.bind(this),
+            23: this.message_onSpectateZoomOut.bind(this),
             254: this.message_onStat.bind(this),
         };
         this.protocol = protocol;
@@ -85,6 +86,9 @@ class PacketHandler {
             return;
         }
         this.socket.playerTracker.spectate = true;
+        this.socket.playerTracker.freeRoam = true;
+        this.socket.playerTracker.spectateTarget = null;
+        this.socket.playerTracker.spectateScale = 0.12;
     }
     message_onMouse(message) {
         if (message.length !== 13 && message.length !== 9 && message.length !== 21) {
@@ -103,7 +107,11 @@ class PacketHandler {
     message_onKeyQ(message) {
         if (message.length !== 1)
             return;
-        var tick = this.server.tickCoutner;
+        if (this.socket.playerTracker.spectate) {
+            this.pressQ = true;
+            return;
+        }
+        var tick = this.server.ticks;
         var dt = tick - this.lastQTick;
         if (dt < this.server.config.ejectCooldown) {
             return;
@@ -125,6 +133,20 @@ class PacketHandler {
         else {
             this.pressW = true;
         }
+    }
+    message_onSpectateZoomIn(message) {
+        if (message.length !== 1)
+            return;
+        if (!this.socket.playerTracker.spectate)
+            return;
+        this.socket.playerTracker.changeSpectateScale(1);
+    }
+    message_onSpectateZoomOut(message) {
+        if (message.length !== 1)
+            return;
+        if (!this.socket.playerTracker.spectate)
+            return;
+        this.socket.playerTracker.changeSpectateScale(-1);
     }
     message_onStat(message) {
         if (message.length !== 1)
@@ -198,7 +220,6 @@ class PacketHandler {
                 socket.send(buffer, { binary: true });
         }
         else {
-            socket.readyState = this.server.WebSocket.CLOSED;
             socket.emit('close');
         }
     }

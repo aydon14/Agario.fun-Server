@@ -6,16 +6,18 @@ minion [Player ID] [Number]: Give minions to a player.
 
 addbot [Number]: Add player bots to this server.
 
-rmbot [Number]: Remove bots from the server
+rmbot [Number]: Remove bots from the server.
 
-kick [Player ID]: Kick a client from the game
+kick [Player ID]: Kick a client from the game.
 
 killall: Remove all client cells from the game.
 
-mass [Player ID] [Number]: Set player mass
+mass [Player ID] [Number]: Set player mass.
+
+restart: Restart the server.
 
 exit: Exit the server.
 
-stats: Generate current server stats
+stats: Generate current server stats.
 
 aliases: Generate command aliases.
